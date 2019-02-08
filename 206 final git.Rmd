@@ -1,0 +1,335 @@
+---
+title: "206 final"
+author: "Tyler Cobian"
+date: "2/8/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+# load all packages necessary for the project
+library(tidyverse)
+library(car)
+library(kableExtra)
+library(onewaytests)
+library(plotly)
+library(effsize)
+library(ggsignif)
+library(corrplot)
+library(stargazer)
+library(pwr)
+library(ggrepel)
+opinion<- read_csv("climate_opinion copy.csv")
+tmas_df<- read_csv("tmas_df copy.csv")
+pesticide_res<- read_csv("PesticideResidues copy.csv")
+county_pesticides<- read_csv("ca_county_pesticides copy.csv")
+ucsb_climate_clean<- read_csv("ucsb_climate_clean copy.csv")
+# load in the data and assign them names
+
+```
+
+Task 1. Climate Change Opinions 
+a. I choose to run a mutli linear regression becasue it was asked that we eaxmine the relationship between a number of vairables and the proportion of people who think climate change is happening
+b.  (visualizing data, will have to adjust the variables once a final model is decided)
+c. stargazer table with a figure caption
+d. I find the coefficient of "coastlineyes" to be interesting because at 3.54 this variable is the strongest factor in determining if someone balieves in climate change, this means with all other variables held constant if you live by the coast you are 3.5% more likely to balieve in climate change. Another interesting variable is that "poverty_rate" has a posotive coefficient, this means that if you increase the poverty rate in an area the percent of people who balieve in climate change wil increase 0.37% if all other variables are held constant. 
+e. Concerns about the assumptions for regression analysis
+
+```{r visualizing data}
+# filter out data to only look at the variables requested in assingment: "happening", "mediaweekly", "bachelors", "poverty", "coastline"
+
+opinion_1<- opinion %>% 
+  select(happening,mediaweekly,bachelors,poverty_rate,coastline)
+opinion_1
+
+# explore relationships between variables
+# correlation matrix 
+cor_opinion_1<- cor(opinion[2:7])
+# make a correlation plot for all varibales except GeoName
+corrplot(cor_opinion_1,
+         type = "upper",
+         method = "ellipse",
+         tl.col = "black",
+         tl.cex = 1)
+# Visual representation of the correlations
+
+```
+
+
+```{r regression}
+# look into linear regression because we are looking for relationships between the variables and "happening"
+
+# saturated model, all variables included
+opinion_lm<- lm(happening~mediaweekly + bachelors + poverty_rate + coastline, data = opinion_1)
+
+summary(opinion_lm) 
+# all variables are significant
+# R^2=0.75
+
+#Use plot to see if assumptions are met
+
+plot(opinion_lm)
+# variance of risiduals look normally distributed
+# some worry about linearity, upper and lower tails look to not be linear
+
+# Use vif to see if there is any risk of coliniearity within the variables
+vif(opinion_lm)
+# all of the vif levels are under two so risk of colinearity is low
+
+```
+
+create a stargazer table for the results
+```{r, results='asis'}
+stargazer(opinion_lm, type = "html")
+
+```
+
+Task 2. UCSB Campus Climate Survaey - Perceptions of Campus Respectfulness by Respondents Race/Ethnicity
+a. 1-2 scentences about why you choose the test you did
+b. One sentence of the finalized results
+c. finalized figure showing proportions and counts include a caption
+d. 2-3 sentece disucssion about what was interesting and big picture trends
+
+
+```{r chi-square}
+# HO: there is no association between ethinicity and preceived campus          respect
+# HA: There is an association between ehtnicity and preceived campus           respect
+
+# first make a table of proportions of outcomes
+
+rownames(ucsb_climate_clean)<- c("Black", "Native American/Native Alaskan", "Asian", "Latino", "Middle Eastern", "Pacific Islander", "White")
+
+ucsb_climate_counts<- ucsb_climate_clean %>% 
+  select(`Very Respectful`, Respectful, Disrespectful, `Very Disrespectful`) %>%
+  round(0)
+
+ucsb_climate_counts
+
+
+climate_props<- prop.table(as.matrix(ucsb_climate_counts), 1) %>% 
+  round(2)
+climate_props
+
+# use prop table to run a chi-square test
+
+climate_x2<- chisq.test(ucsb_climate_counts)
+climate_x2
+
+# the p-value is near 0 so we reject the null hypothesis and see that there is an association between ethnicity/race and perception of campus respectfulness
+
+```
+
+Finalized table of counts and proportions
+
+```{r tables}
+
+# rbind the counts and proportions tables
+
+counts_props<- rbind(climate_props, ucsb_climate_counts)
+counts_props
+
+# rename rows
+row.names(counts_props)<- c("Proportion of African Americans",
+                            "Proportion of Native American/Native Alaskan",
+                            "Proportion of Asian",
+                            "Proportion of Hispanic/Latino",
+                            "Proportion of Middle Eastern",
+                            "Proportion of Pacific Islander",
+                            "Proportion of White",
+                            "Number of African American",
+                            "Number of Native American/Native Alaskan",
+                            "Number of Asian",
+                            "Number of Hispanic/Latino",
+                            "Number of Middle Eastern",
+                            "Number of Pacific Islander",
+                            "Number of White")
+
+# finalized table of both the counts and proportions of responses
+counts_props %>% 
+  kable(caption = "Number and Proportion of Students Preceived Campus Respect") %>%
+  kable_styling("striped", "bordered")
+  
+```
+
+Task-3 Effect of sex on self-conciousness
+a. A finalized table of model results and statistics with a table caption
+b. A finalized graph showing predicted probabilities for True/False responses seperated by sex over a range of ages, with standard errors included. You DO NOT need a figure caption
+c. 2-3 sentences describe trends, differrences, similarities seen in the graph and how those aalign with the results you report in (a).
+
+```{r Binary Logistic Regression}
+# rename so response and gender to be numeric
+# male = 1  female = 0
+# yes = 1   no = 0
+
+self_con<- tmas_df %>% 
+  mutate(case_when(response == "TRUE" ~ 1,
+                   response == "FALSE" ~ 0)) %>% 
+  mutate(case_when(sex_mf == "Male" ~ 1,
+                   sex_mf == "Female" ~ 0))
+
+colnames(self_con)<- c("age", "sex_mf", "response_0", "response", "sex")
+
+# create a new df with only numeric responses
+
+self_con_1<- self_con %>% 
+  select(age, response, sex)
+
+self_con_1
+
+```
+
+Start looking at correlation of variables
+
+```{r}
+cor_self_con<- cor(self_con_1)
+#correlation between variables
+self_model<- glm(response~sex + age, family = "binomial", data = self_con_1)
+# regression using the variables sex and age to determine response
+summary(self_model)
+# interesting that sex is not significant
+vif(self_model)
+# both vif levels are around 1 so there is little worry for colinearity
+plot(self_con_1$age, self_con_1$sex)
+
+```
+
+Stargazer table to show results
+
+```{r, results='asis'}
+stargazer(self_model, type = "html")
+```
+
+predictions
+
+```{r}
+self_predictions<- predict(self_model, newdata = self_con_1, se.fit = TRUE, interval = "confidence")
+self_predictions
+
+predictions_df<- data.frame(self_predictions, self_con_1)
+
+clean_predict_df<- predictions_df %>% 
+  rename("prediction" = fit) %>% 
+  mutate(case_when(sex == 1 ~"Male",
+                   sex == 0 ~ "Female")) %>% 
+  mutate(case_when( response == 1 ~ "Self-Conscious",
+                   response == 0 ~ "Not Self-Conscious"))
+
+colnames(clean_predict_df)<- c("prediction", "se.prediction", "residual.scale", "age", "response_0", "sex_0", "sex", "response")
+
+graph_df<- clean_predict_df %>% 
+  select(prediction, se.prediction, residual.scale, age, sex, response)
+graph_df
+
+
+```
+
+Create a graph
+
+```{r}
+predict_graph<- ggplot(graph_df, aes(x = age, y = fit))+
+  geom_point(data = graph_df, aes(x = age, y = response ), alpha = 0.05, color = "cyan4")+
+  facet_wrap(~sex)+
+  labs(y = "Predicted Response", x = "Age", caption = "Self-Consciousness for Males & Females")+
+  theme_classic()
+
+predict_graph
+```
+
+Task-4
+Is there a significant difference in pyraclostrabin concentrations in strawberries and carrots?
+a) summarize all exploratory analysis peromed in order to decide on the appropriate test to compare concentrations. Include exploratory graphs that informed your decision. Based on these outcomes justify your decesion
+
+b) in 1-2 sentences state your final reults in a  format that would be suitable for publication. 
+
+```{r}
+# first do some data wrangling to get a df that only contains starwberries and carrots and pyraclostrabin concentrations concentrations
+
+pest<- pesticide_res %>% 
+  select(COMMODITY, `CHEMICAL DETECTED (IF ANY)`, `AMOUNT OF CHEMICAL DETECTED (PPM)` ) %>% 
+  filter(COMMODITY == "STRAWBERRY (ALL OR UNSPEC)" | COMMODITY == "CARROTS (ROOT CROP)") %>% 
+  rename("chemical" = "CHEMICAL DETECTED (IF ANY)") %>% 
+  filter(chemical == "PYRACLOSTROBIN") %>% 
+  rename("amount" = "AMOUNT OF CHEMICAL DETECTED (PPM)") %>% 
+  select(COMMODITY, amount)
+pest
+
+```
+
+Do some exploratory graphs of the data see if we can do a one way two sample t-test
+```{r}
+# use a qq plot to check for linearity
+pestqq<- ggplot(pest, aes(sample = amount))+
+  geom_qq()
+pestqq
+# data looks somewhat linear there looks like there is actually a curve
+
+# use a histogram to see if the data is normal
+pest_hist<- ggplot(pest, aes(x = amount))+
+  geom_histogram()
+pest_hist
+# data does not look normally distributed so the central limit theorem might not apply but there is 55 observations so we will us a non-parametric test
+
+# perform an f-test to test for equal varinaces between strawberries and carrots
+
+var.test(amount ~ COMMODITY, data = pest)
+# the variaances are not equal p<0.001
+
+```
+
+Perform a t-test to see if the means of the two commodities re equal
+```{r}
+# H0: There is no difference between the mean chemical concentrations between strawberries and carrots
+# HA: there is a difference in mean chemical conenctrations between the two comodities
+
+commodity_ttes<- t.test(amount ~ COMMODITY, data = pest, var.equal = FALSE)
+commodity_ttes
+# reject null hypothesis there is a sognificant difference between the two commodidies p<0.001
+
+# just for fun lets see if a non parametric test yeilds the same result
+commodity_wilcox<- wilcox.test(amount ~ COMMODITY, data = pest, var.equal = FALSE)
+commodity_wilcox
+# yes ma'am it does p<0.001
+commodity_cohend<- cohen.d(pest$amount, pest$COMMODITY, na.rm = TRUE)
+commodity_cohend
+#there is a large effectsize
+```
+
+TASK-5
+a) code used to wrangle data
+b) final graph of top 10 CA counties (by pesticide per square mile)
+
+```{r data wrangling}
+# rename the columns so that they are easier to work withg
+colnames(county_pesticides)<- c("County", "pounds_pesticieds", "state_ranking", "county_size_mile")
+
+
+county_pest<- county_pesticides %>% 
+  mutate(pesticide_per_mile = pounds_pesticieds/county_size_mile) %>% 
+  arrange(pesticide_per_mile) %>% 
+  tail(10) %>% 
+  select(County, county_size_mile, pesticide_per_mile, pounds_pesticieds)
+# make a new column that is county size divided pounds of pesticide used in that county
+# arrange pesticide per mile for the top 10 counties (the counties were arranged from lowest to highest to tail(10) was get the top ten counties)
+```
+
+Graph for task-5
+
+```{r}
+pesticide_gaph<- ggplot(county_pest, aes(x = pesticide_per_mile, y = county_size_mile, label = County))+
+  geom_point(aes(size = pesticide_per_mile, color = County), alpha = 0.6)+
+  geom_text_repel(size = 3)+
+  theme(legend.position = "NA")+
+  labs(x = "Pounds of Pesticide per mile", y = "Size of County by mile", title = "Top 10 CA Counties by Pesticide Usage per Mile")
+
+pesticide_gaph
+                        
+```
+
+
+
+
+
+
